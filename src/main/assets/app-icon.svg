@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- App icon: waveform pulse inside a rounded square on a dark background.
+       Same waveform design as the tray icon but with colour for the app/Dock icon. -->
+  <!-- Background rounded square -->
+  <rect x="0" y="0" width="1024" height="1024" rx="192" fill="#1a1a2e"/>
+  <!-- Inner border -->
+  <rect x="96" y="96" width="832" height="832" rx="160" fill="none" stroke="#7c3aed" stroke-width="48" opacity="0.35"/>
+  <!-- Waveform pulse -->
+  <polyline points="224,512 320,320 416,640 512,272 608,704 704,352 800,512"
+    fill="none" stroke="#a78bfa" stroke-width="56" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

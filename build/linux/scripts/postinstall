@@ -1,0 +1,43 @@
+#!/bin/sh
+# Post-install script for Catalyst Stream Controller (.deb and .rpm)
+# Installs udev rules so stream deck devices are accessible without root.
+set -e
+
+RULES_DST="/etc/udev/rules.d/70-catalyst-stream-controller.rules"
+
+cat > "$RULES_DST" << 'UDEV_RULES'
+# Catalyst Stream Controller — udev rules for stream deck devices
+# Grants device access to the logged-in user via systemd-logind (TAG+="uaccess").
+# Falls back to GROUP="dialout" for non-systemd distros (user must be in dialout).
+
+# ─── Elgato Stream Deck devices (USB HID) — vendor 0x0fd9 ─────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0fd9", TAG+="uaccess"
+
+# ─── Corsair (Galleon K100) — vendor 0x1b1c ────────────────────
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="2b18", TAG+="uaccess"
+
+# ─── Loupedeck devices — vendor 0x2ec2 ─────────────────────────
+# USB (subsystem)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2ec2", TAG+="uaccess"
+# Serial (ttyACM) for serial transport
+KERNEL=="ttyACM[0-9]*", ATTRS{idVendor}=="2ec2", MODE="0660", GROUP="dialout", TAG+="uaccess"
+# HID (hidraw) — must be openable to enable serial input on some firmware
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2ec2", MODE="0660", GROUP="dialout", TAG+="uaccess"
+
+# ─── Razer Stream Controller devices — vendor 0x1532 ───────────
+# Razer Stream Controller (0x0d06)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d06", TAG+="uaccess"
+KERNEL=="ttyACM[0-9]*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d06", MODE="0660", GROUP="dialout", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d06", MODE="0660", GROUP="dialout", TAG+="uaccess"
+# Razer Stream Controller X (0x0d09)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d09", TAG+="uaccess"
+KERNEL=="ttyACM[0-9]*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d09", MODE="0660", GROUP="dialout", TAG+="uaccess"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0d09", MODE="0660", GROUP="dialout", TAG+="uaccess"
+UDEV_RULES
+
+if command -v udevadm >/dev/null 2>&1; then
+  udevadm control --reload-rules
+  udevadm trigger
+fi
+
+exit 0

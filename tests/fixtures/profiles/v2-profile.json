@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "activeProfileId": "v2-profile-1",
+  "profiles": [
+    {
+      "id": "v2-profile-1",
+      "name": "V2 Profile",
+      "rootPageId": "page-main",
+      "pages": {
+        "page-main": {
+          "id": "page-main",
+          "name": "Main",
+          "bindings": {
+            "0": {
+              "id": "act-001",
+              "type": "hotkey",
+              "label": "Copy",
+              "config": {
+                "steps": [{ "key": "c", "modifiers": ["meta"] }]
+              }
+            },
+            "1": {
+              "id": "act-002",
+              "type": "obs",
+              "label": "Scene 1",
+              "config": {
+                "obsAction": "switch-scene",
+                "sceneName": "Gaming"
+              }
+            }
+          }
+        },
+        "page-2": {
+          "id": "page-2",
+          "name": "Page 2",
+          "bindings": {
+            "0": {
+              "id": "act-003",
+              "type": "launch",
+              "label": "Terminal",
+              "config": {
+                "path": "/usr/bin/terminal"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

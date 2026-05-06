@@ -1,0 +1,192 @@
+{
+  "version": 3,
+  "activeProfileId": "profile-1",
+  "profiles": [
+    {
+      "id": "profile-1",
+      "name": "Streaming",
+      "rootPageId": "page-main",
+      "pages": {
+        "page-main": {
+          "id": "page-main",
+          "name": "Main",
+          "bindings": {
+            "0": {
+              "press": {
+                "id": "act-001",
+                "type": "obs",
+                "label": "Scene: Gaming",
+                "config": {
+                  "obsAction": "switch-scene",
+                  "sceneName": "Gaming"
+                }
+              },
+              "longPress": {
+                "id": "act-001-lp",
+                "type": "obs",
+                "label": "Toggle Stream",
+                "config": {
+                  "obsAction": "toggle-stream"
+                }
+              }
+            },
+            "1": {
+              "press": {
+                "id": "act-002",
+                "type": "discord",
+                "label": "Toggle Mute",
+                "config": {
+                  "discordAction": "toggle-mute"
+                }
+              }
+            },
+            "2": {
+              "press": {
+                "id": "act-003",
+                "type": "hotkey",
+                "label": "Copy",
+                "config": {
+                  "steps": [{ "key": "c", "modifiers": ["meta"] }]
+                }
+              },
+              "doubleTap": {
+                "id": "act-003-dt",
+                "type": "hotkey",
+                "label": "Paste",
+                "config": {
+                  "steps": [{ "key": "v", "modifiers": ["meta"] }]
+                }
+              }
+            },
+            "14": {
+              "press": {
+                "id": "act-goto",
+                "type": "go-to-page",
+                "label": "OBS Controls",
+                "config": {
+                  "pageId": "page-obs"
+                }
+              }
+            }
+          },
+          "knobBindings": {
+            "knobTL": {
+              "rotateClockwise": {
+                "id": "knob-vol-up",
+                "type": "multimedia",
+                "label": "Vol +",
+                "config": { "action": "volume-up" }
+              },
+              "rotateCounterClockwise": {
+                "id": "knob-vol-down",
+                "type": "multimedia",
+                "label": "Vol −",
+                "config": { "action": "volume-down" }
+              },
+              "press": {
+                "id": "knob-mute",
+                "type": "multimedia",
+                "label": "Mute",
+                "config": { "action": "mute" }
+              }
+            }
+          }
+        },
+        "page-obs": {
+          "id": "page-obs",
+          "name": "OBS Controls",
+          "bindings": {
+            "0": {
+              "press": {
+                "id": "obs-scene1",
+                "type": "obs",
+                "label": "Scene 1",
+                "config": {
+                  "obsAction": "switch-scene",
+                  "sceneName": "Scene 1"
+                }
+              }
+            },
+            "14": {
+              "press": {
+                "id": "act-back",
+                "type": "go-to-back",
+                "label": "← Back",
+                "config": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "profile-2",
+      "name": "Music",
+      "rootPageId": "page-music",
+      "pages": {
+        "page-music": {
+          "id": "page-music",
+          "name": "Music Controls",
+          "bindings": {
+            "0": {
+              "press": {
+                "id": "music-pp",
+                "type": "multimedia",
+                "label": "Play/Pause",
+                "config": { "action": "play-pause" }
+              }
+            },
+            "1": {
+              "press": {
+                "id": "music-next",
+                "type": "multimedia",
+                "label": "Next",
+                "config": { "action": "next" }
+              }
+            },
+            "2": {
+              "press": {
+                "id": "music-prev",
+                "type": "multimedia",
+                "label": "Prev",
+                "config": { "action": "prev" }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "obsConnectionSettings": {
+    "url": "ws://127.0.0.1:4455",
+    "password": "testpassword",
+    "autoConnect": true
+  },
+  "discordConnectionSettings": {
+    "clientId": "123456789012345678",
+    "autoConnect": false
+  },
+  "interactionSettings": {
+    "longPressMs": 600,
+    "doubleTapMs": 250
+  },
+  "appSwitchSettings": {
+    "enabled": true,
+    "defaultProfileId": "profile-1",
+    "rules": [
+      {
+        "id": "rule-1",
+        "appName": "Spotify",
+        "bundleId": "com.spotify.client",
+        "profileId": "profile-2"
+      }
+    ],
+    "pollIntervalMs": 500
+  },
+  "calibrationInsets": {
+    "MOCK-SERIAL-001": { "top": 2, "bottom": 2, "left": 2, "right": 2 }
+  },
+  "deviceBrightness": {
+    "MOCK-SERIAL-001": 0.75
+  }
+}

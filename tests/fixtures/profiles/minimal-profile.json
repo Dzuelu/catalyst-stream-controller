@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "activeProfileId": "min-profile",
+  "profiles": [
+    {
+      "id": "min-profile",
+      "name": "Minimal",
+      "rootPageId": "min-page",
+      "pages": {
+        "min-page": {
+          "id": "min-page",
+          "name": "Main",
+          "bindings": {}
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+#!/bin/sh
+# Validates that udev rules are granting access to connected supported devices.
+#
+# Usage:
+#   validate-udev              Check all currently connected supported devices
+#   validate-udev --monitor    Also watch for hotplugged devices (Ctrl+C to stop)
+
+set -e
+
+RULES_FILE="/etc/udev/rules.d/70-catalyst-stream-controller.rules"
+
+# Supported devices — vid:pid:label (empty pid = match all products from vendor)
+DEVICES="
+0fd9::Elgato Stream Deck
+1b1c:2b18:Corsair K100
+2ec2::Loupedeck
+1532:0d06:Razer Stream Controller
+1532:0d09:Razer Stream Controller X
+"
+
+ERRORS=0
+
+pass() { printf "  \033[32m✓\033[0m %s\n" "$1"; }
+fail() { printf "  \033[31m✗\033[0m %s\n" "$1"; ERRORS=$((ERRORS + 1)); }
+warn() { printf "  \033[33m!\033[0m %s\n" "$1"; }
+info() { printf "  \033[36mℹ\033[0m %s\n" "$1"; }
+
+# ---------------------------------------------------------------------------
+# Check a single USB device at a sysfs path
+#   $1 = sysfs device directory (e.g. /sys/bus/usb/devices/1-2)
+#   $2 = human-readable label
+# ---------------------------------------------------------------------------
+check_device() {
+  devdir="$1"
+  label="$2"
+  devpath=$(udevadm info --query=path --path="$devdir" 2>/dev/null) || devpath="$devdir"
+
+  echo
+  echo "  ── $label ──"
+  info "sysfs: $devdir"
+
+  # --- Check uaccess tag via udevadm ---
+  udev_props=$(udevadm info --query=property --path="$devpath" 2>/dev/null) || true
+
+  if echo "$udev_props" | grep -qE "(^TAGS|^CURRENT_TAGS)=.*uaccess"; then
+    pass "uaccess tag applied on USB device"
+  else
+    fail "uaccess tag NOT applied — device may require root access"
+    info "Debug: udevadm info --query=property --path=$devpath"
+    if [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+      info "Hint: sudo usermod -aG dialout \$USER  (then re-login)"
+    fi
+  fi
+
+  # --- Check the /dev node permissions ---
+  devnode=$(echo "$udev_props" | grep "^DEVNAME=" | head -1 | cut -d= -f2)
+  if [ -n "$devnode" ] && [ -e "$devnode" ]; then
+    perms=$(stat -c '%A %U:%G' "$devnode" 2>/dev/null) || perms=$(ls -l "$devnode" | awk '{print $1, $3":"$4}')
+    if [ -r "$devnode" ] && [ -w "$devnode" ]; then
+      pass "$devnode read+write OK ($perms)"
+    elif [ -r "$devnode" ]; then
+      warn "$devnode read-only ($perms)"
+    else
+      fail "$devnode not accessible to current user ($perms)"
+      if [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+        info "Hint: sudo usermod -aG dialout \$USER  (then re-login)"
+      fi
+    fi
+  fi
+
+  # --- Check associated serial ports (Loupedeck / Razer use ttyACM) ---
+  vid=$(cat "$devdir/idVendor" 2>/dev/null) || return
+  if [ "$vid" = "2ec2" ] || [ "$vid" = "1532" ]; then
+    found_tty=0
+    for tty_sys in /sys/class/tty/ttyACM*; do
+      [ -e "$tty_sys" ] || continue
+      # Resolve the tty's parent USB device and compare
+      tty_real=$(readlink -f "$tty_sys/device" 2>/dev/null) || continue
+      case "$tty_real" in
+        "$devdir"/*)
+          tty_name=$(basename "$tty_sys")
+          tty_dev="/dev/$tty_name"
+          found_tty=1
+          if [ ! -e "$tty_dev" ]; then
+            fail "Serial port $tty_dev missing"
+            continue
+          fi
+          tty_perms=$(stat -c '%A %U:%G' "$tty_dev" 2>/dev/null) || tty_perms=$(ls -l "$tty_dev" | awk '{print $1, $3":"$4}')
+          tty_props=$(udevadm info --query=property --name="$tty_dev" 2>/dev/null) || true
+          if echo "$tty_props" | grep -qE "(^TAGS|^CURRENT_TAGS)=.*uaccess"; then
+            pass "$tty_dev uaccess tag applied ($tty_perms)"
+          elif [ -r "$tty_dev" ] && [ -w "$tty_dev" ]; then
+            pass "$tty_dev read+write OK ($tty_perms)"
+          else
+            fail "$tty_dev not accessible ($tty_perms)"
+            if [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+              info "Hint: sudo usermod -aG dialout \$USER  (then re-login)"
+            fi
+          fi
+          ;;
+      esac
+    done
+    if [ "$found_tty" -eq 0 ]; then
+      info "No ttyACM serial port found for this device (may be in HID mode)"
+    fi
+
+    # --- Check associated HID raw devices (Loupedeck / Razer HID transport) ---
+    found_hid=0
+    for hid_sys in /sys/class/hidraw/hidraw*; do
+      [ -e "$hid_sys" ] || continue
+      hid_real=$(readlink -f "$hid_sys/device" 2>/dev/null) || continue
+      case "$hid_real" in
+        "$devdir"/*)
+          hid_name=$(basename "$hid_sys")
+          hid_dev="/dev/$hid_name"
+          found_hid=1
+          if [ ! -e "$hid_dev" ]; then
+            fail "HID device $hid_dev missing"
+            continue
+          fi
+          hid_perms=$(stat -c '%A %U:%G' "$hid_dev" 2>/dev/null) || hid_perms=$(ls -l "$hid_dev" | awk '{print $1, $3":"$4}')
+          hid_props=$(udevadm info --query=property --name="$hid_dev" 2>/dev/null) || true
+          if echo "$hid_props" | grep -qE "(^TAGS|^CURRENT_TAGS)=.*uaccess"; then
+            pass "$hid_dev uaccess tag applied ($hid_perms)"
+          elif [ -r "$hid_dev" ] && [ -w "$hid_dev" ]; then
+            pass "$hid_dev read+write OK ($hid_perms)"
+          else
+            fail "$hid_dev not accessible ($hid_perms)"
+            if [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+              info "Hint: sudo usermod -aG dialout \$USER  (then re-login)"
+            fi
+          fi
+          ;;
+      esac
+    done
+    if [ "$found_hid" -eq 0 ] && [ "$found_tty" -eq 0 ]; then
+      warn "No ttyACM or hidraw interface found for this device"
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Scan all currently connected supported USB devices
+# ---------------------------------------------------------------------------
+scan_devices() {
+  echo "Scanning for connected supported devices..."
+
+  found=0
+
+  for syspath in /sys/bus/usb/devices/*/idVendor; do
+    [ -e "$syspath" ] || continue
+    devdir=$(dirname "$syspath")
+    dev_vid=$(cat "$syspath" 2>/dev/null) || continue
+    dev_pid=$(cat "$devdir/idProduct" 2>/dev/null) || continue
+    product=$(cat "$devdir/product" 2>/dev/null) || product="unknown"
+
+    echo "$DEVICES" | while IFS=: read -r vid pid label; do
+      [ -z "$vid" ] && continue
+      vid=$(echo "$vid" | tr -d ' ')
+      pid=$(echo "$pid" | tr -d ' ')
+      label=$(echo "$label" | sed 's/^ *//')
+
+      [ "$dev_vid" = "$vid" ] || continue
+      if [ -n "$pid" ] && [ "$dev_pid" != "$pid" ]; then
+        continue
+      fi
+
+      check_device "$devdir" "$label — $product ($dev_vid:$dev_pid)"
+      # Signal we found something (write to temp file since we're in a subshell)
+      echo 1 > /tmp/.osc_validate_found 2>/dev/null
+    done
+  done
+
+  if [ -f /tmp/.osc_validate_found ]; then
+    rm -f /tmp/.osc_validate_found
+    found=1
+  fi
+
+  if [ "$found" -eq 0 ]; then
+    echo
+    info "No supported devices currently connected."
+    info "Plug in a device, or use --monitor to watch for hotplugs."
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Monitor for hotplugged devices and validate on arrival
+# ---------------------------------------------------------------------------
+monitor_devices() {
+  echo
+  echo "Monitoring for hotplugged devices... (Ctrl+C to stop)"
+  echo
+
+  stdbuf -oL udevadm monitor --subsystem-match=usb --property 2>/dev/null | {
+    devpath=""
+    dev_vid=""
+    dev_pid=""
+    action=""
+
+    while IFS= read -r line; do
+      case "$line" in
+        "ACTION="*)    action="${line#ACTION=}" ;;
+        "DEVPATH="*)   devpath="${line#DEVPATH=}" ;;
+        "ID_VENDOR_ID="*)  dev_vid="${line#ID_VENDOR_ID=}" ;;
+        "ID_MODEL_ID="*)   dev_pid="${line#ID_MODEL_ID=}" ;;
+        "")
+          # End of event block
+          if [ "$action" = "bind" ] && [ -n "$devpath" ] && [ -n "$dev_vid" ]; then
+            echo "$DEVICES" | while IFS=: read -r vid pid label; do
+              [ -z "$vid" ] && continue
+              vid=$(echo "$vid" | tr -d ' ')
+              pid=$(echo "$pid" | tr -d ' ')
+              label=$(echo "$label" | sed 's/^ *//')
+
+              [ "$dev_vid" = "$vid" ] || continue
+              if [ -n "$pid" ] && [ "$dev_pid" != "$pid" ]; then
+                continue
+              fi
+
+              # Brief pause for udev to finish applying rules
+              sleep 1
+              printf "\n\033[1m  ⚡ Device hotplugged!\033[0m\n"
+              sysdir="/sys$devpath"
+              check_device "$sysdir" "$label ($dev_vid:$dev_pid) [hotplug]"
+              echo
+            done
+          fi
+          devpath=""; dev_vid=""; dev_pid=""; action=""
+          ;;
+      esac
+    done
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+if ! command -v udevadm >/dev/null 2>&1; then
+  echo "Error: udevadm not found. This script requires a Linux system with udev."
+  exit 1
+fi
+
+echo "Catalyst Stream Controller — Device Access Validator"
+echo
+
+if [ -f "$RULES_FILE" ]; then
+  pass "Rules file installed: $RULES_FILE"
+else
+  warn "Rules file not found: $RULES_FILE"
+  info "Install the package or run the postinstall script first."
+fi
+
+# --- systemd / seat check ---
+HAS_SYSTEMD=0
+if command -v loginctl >/dev/null 2>&1 && loginctl 2>/dev/null | grep -q "$(id -un)"; then
+  HAS_SYSTEMD=1
+  pass "systemd-logind active (TAG+=\"uaccess\" will work)"
+else
+  warn "systemd-logind not detected — TAG+=\"uaccess\" may not grant access"
+  info "Falling back to group membership checks."
+fi
+
+# --- Group membership check (dialout / uucp) ---
+USER_GROUPS=$(id -Gn 2>/dev/null) || USER_GROUPS=""
+IN_DEVICE_GROUP=0
+
+for grp in dialout uucp; do
+  case " $USER_GROUPS " in
+    *" $grp "*)
+      pass "User $(id -un) is in group '$grp'"
+      IN_DEVICE_GROUP=1
+      ;;
+  esac
+done
+
+if [ "$HAS_SYSTEMD" -eq 0 ] && [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+  fail "User $(id -un) is not in the dialout group (or uucp on Arch)"
+  info "Fix with: sudo usermod -aG dialout \$USER  (then log out and back in)"
+elif [ "$HAS_SYSTEMD" -eq 1 ] && [ "$IN_DEVICE_GROUP" -eq 0 ]; then
+  info "User not in dialout/uucp group (OK if uaccess works, needed as fallback otherwise)"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+scan_devices
+
+if [ "$1" = "--monitor" ]; then
+  monitor_devices
+else
+  echo
+  info "Tip: run with --monitor to validate devices as they are plugged in."
+fi
+
+echo
+if [ "$ERRORS" -eq 0 ]; then
+  printf "\033[32mAll device checks passed.\033[0m\n"
+else
+  printf "\033[31m%d device check(s) failed.\033[0m\n" "$ERRORS"
+fi
+exit "$ERRORS"

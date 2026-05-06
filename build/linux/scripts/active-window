@@ -1,0 +1,129 @@
+#!/bin/sh
+# active-window — Detect the currently focused window on Linux.
+# Outputs a single JSON line: {"name":"...","pid":...,"method":"..."}
+# Exits 0 on success, 1 if no supported method is found.
+#
+# Supports: Hyprland, Sway, KDE Plasma, GNOME (with extension), X11.
+# Detection order mirrors env-var specificity so the most reliable
+# compositor-native method wins.
+
+set -e
+
+# ── Helpers ───────────────────────────────────────────────────
+json_result() {
+  # $1 = name  $2 = pid (may be empty)  $3 = method
+  _pid="${2:-0}"
+  # Escape double-quotes and backslashes in the window name
+  _name=$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  printf '{"name":"%s","pid":%s,"method":"%s"}\n' "$_name" "$_pid" "$3"
+  exit 0
+}
+
+command_exists() { command -v "$1" >/dev/null 2>&1; }
+
+# ── Compositor detection ──────────────────────────────────────
+
+# 1. Hyprland — fast JSON IPC
+if [ -n "$HYPRLAND_INSTANCE_SIGNATURE" ] || command_exists hyprctl; then
+  if result=$(hyprctl -j activewindow 2>/dev/null); then
+    _class=$(printf '%s' "$result" | sed -n 's/.*"class" *: *"\([^"]*\)".*/\1/p')
+    _pid=$(printf '%s' "$result" | sed -n 's/.*"pid" *: *\([0-9]*\).*/\1/p')
+    if [ -n "$_class" ]; then
+      json_result "$_class" "$_pid" "hyprland"
+    fi
+  fi
+fi
+
+# 2. Sway — i3-compatible IPC
+if [ -n "$SWAYSOCK" ] || command_exists swaymsg; then
+  if result=$(swaymsg -t get_tree --raw 2>/dev/null); then
+    # jq is the sane way to walk the tree; fall back to a focused-node grep
+    if command_exists jq; then
+      focused=$(printf '%s' "$result" | jq -r '.. | objects | select(.focused==true and .type=="con") | {app_id, pid, name, wp: .window_properties.class} | @json' 2>/dev/null | head -1)
+      if [ -n "$focused" ]; then
+        _name=$(printf '%s' "$focused" | jq -r 'if .app_id != null and .app_id != "" then .app_id elif .wp != null and .wp != "" then .wp else .name end' 2>/dev/null)
+        _pid=$(printf '%s' "$focused" | jq -r '.pid // 0' 2>/dev/null)
+        [ -n "$_name" ] && json_result "$_name" "$_pid" "sway"
+      fi
+    fi
+  fi
+fi
+
+# 3. KDE Plasma — kdotool or qdbus
+desktop_lower=$(echo "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')
+if echo "$desktop_lower" | grep -q "kde"; then
+  # 3a. kdotool (preferred, xdotool-like)
+  if command_exists kdotool; then
+    wid=$(kdotool getactivewindow 2>/dev/null) || true
+    if [ -n "$wid" ]; then
+      _name=$(kdotool getactivewindow getwindowclassname 2>/dev/null) || true
+      _pid=$(kdotool getactivewindow getwindowpid 2>/dev/null) || true
+      [ -n "$_name" ] && json_result "$_name" "$_pid" "kde"
+    fi
+  fi
+
+  # 3b. qdbus / gdbus fallback for KDE
+  if command_exists qdbus; then
+    _name=$(qdbus org.kde.KWin /KWin org.kde.KWin.activeWindow 2>/dev/null | head -1) || true
+    if [ -n "$_name" ]; then
+      json_result "$_name" "" "kde"
+    fi
+  fi
+fi
+
+# 4. GNOME — D-Bus extension (Window Calls Extended)
+if echo "$desktop_lower" | grep -qE "gnome|unity"; then
+  if command_exists gdbus; then
+    gnome_out=$(gdbus call --session \
+      --dest org.gnome.Shell \
+      --object-path /org/gnome/Shell/Extensions/WindowsExt \
+      --method org.gnome.Shell.Extensions.WindowsExt.FocusInfo 2>/dev/null) || true
+
+    if [ -n "$gnome_out" ]; then
+      # Response format: ('{"wm_class":"...", "pid":..., ...}',)
+      _json=$(printf '%s' "$gnome_out" | sed "s/^('//; s/',)$//")
+      if command_exists jq; then
+        _name=$(printf '%s' "$_json" | jq -r '.wm_class // .wm_class_instance // empty' 2>/dev/null)
+        _pid=$(printf '%s' "$_json" | jq -r '.pid // 0' 2>/dev/null)
+      else
+        _name=$(printf '%s' "$_json" | sed -n 's/.*"wm_class" *: *"\([^"]*\)".*/\1/p')
+        _pid=$(printf '%s' "$_json" | sed -n 's/.*"pid" *: *\([0-9]*\).*/\1/p')
+      fi
+      [ -n "$_name" ] && json_result "$_name" "$_pid" "gnome"
+    fi
+
+    # Legacy Shell.Eval fallback (GNOME < 41)
+    legacy_out=$(gdbus call --session \
+      --dest org.gnome.Shell \
+      --object-path /org/gnome/Shell \
+      --method org.gnome.Shell.Eval \
+      'global.display.focus_window ? global.display.focus_window.get_wm_class() : ""' 2>/dev/null) || true
+
+    if printf '%s' "$legacy_out" | grep -q "true"; then
+      _name=$(printf '%s' "$legacy_out" | sed "s/.*true, *'\\{0,1\\}\"\\{0,1\\}//; s/[\"')]*$//")
+      [ -n "$_name" ] && json_result "$_name" "" "gnome"
+    fi
+  fi
+fi
+
+# 5. X11 / XWayland fallback
+if command_exists xdotool; then
+  wid=$(xdotool getactivewindow 2>/dev/null) || true
+  if [ -n "$wid" ]; then
+    xprop_out=$(xprop -id "$wid" WM_CLASS 2>/dev/null) || true
+    # WM_CLASS(STRING) = "instance", "ClassName"
+    _name=$(printf '%s' "$xprop_out" | sed -n 's/.*= *"[^"]*", *"\([^"]*\)".*/\1/p')
+    if [ -z "$_name" ]; then
+      _name=$(printf '%s' "$xprop_out" | sed -n 's/.*= *"\([^"]*\)".*/\1/p')
+    fi
+
+    pid_out=$(xprop -id "$wid" _NET_WM_PID 2>/dev/null) || true
+    _pid=$(printf '%s' "$pid_out" | sed -n 's/.*= *\([0-9]*\).*/\1/p')
+
+    [ -n "$_name" ] && json_result "$_name" "$_pid" "x11"
+  fi
+fi
+
+# Nothing worked
+echo '{"name":"","pid":0,"method":"none"}' >&2
+exit 1

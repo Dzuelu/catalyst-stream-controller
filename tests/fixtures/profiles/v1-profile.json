@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "activeProfileId": "v1-profile-1",
+  "profiles": [
+    {
+      "id": "v1-profile-1",
+      "name": "Legacy V1",
+      "bindings": {
+        "0": {
+          "id": "action-001",
+          "type": "hotkey",
+          "label": "Mute",
+          "config": {
+            "key": "m",
+            "modifiers": ["ctrl"]
+          }
+        },
+        "3": {
+          "id": "action-002",
+          "type": "launch",
+          "label": "Browser",
+          "config": {
+            "path": "/usr/bin/firefox"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Post-remove script for Catalyst Stream Controller (.deb and .rpm)
+# Removes udev rules on package uninstall.
+set -e
+
+RULES_DST="/etc/udev/rules.d/70-catalyst-stream-controller.rules"
+
+rm -f "$RULES_DST"
+
+if command -v udevadm >/dev/null 2>&1; then
+  udevadm control --reload-rules
+fi
+
+exit 0
