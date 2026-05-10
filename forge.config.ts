@@ -21,10 +21,11 @@ const config: ForgeConfig = {
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({}),
+    new MakerSquirrel({ setupExe: 'catalyst-stream-controller-windows-setup.exe' }),
     new MakerZIP({}, ['darwin']),
     new MakerDeb({
       options: {
+        name: 'catalyst-stream-controller-linux',
         depends: [
           'libudev1',
           'libusb-1.0-0',
