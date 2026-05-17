@@ -13,7 +13,15 @@ import fs from 'node:fs';
 // Native modules that Vite marks as external and must be available at runtime.
 // The VitePlugin doesn't put node_modules in the asar, so we use afterCopy to
 // copy them into the packaged app's node_modules alongside the asar.
-const nativeModules = ['canvas', 'node-hid', 'serialport', '@serialport', '@elgato-stream-deck', 'bufferutil', 'utf-8-validate'];
+const nativeModules = [
+  'canvas',
+  'node-hid',
+  'serialport',
+  '@serialport',
+  '@elgato-stream-deck',
+  'bufferutil',
+  'utf-8-validate'
+];
 
 /**
  * Recursively collect all production dependencies for the given module names.
