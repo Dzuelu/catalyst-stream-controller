@@ -8,24 +8,95 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import path from 'node:path';
+import fs from 'node:fs';
+
+// Native modules that Vite marks as external and must be available at runtime.
+// The VitePlugin doesn't put node_modules in the asar, so we use afterCopy to
+// copy them into the packaged app's node_modules alongside the asar.
+const nativeModules = ['canvas', 'node-hid', 'serialport', '@serialport', '@elgato-stream-deck', 'bufferutil', 'utf-8-validate'];
+
+/**
+ * Recursively collect all production dependencies for the given module names.
+ * Walks each module's package.json `dependencies` to discover transitive deps
+ * (e.g. tslib) so we don't have to track them manually.
+ */
+function collectAllDeps(rootNodeModules: string, entryModules: string[]): Set<string> {
+  const collected = new Set<string>();
+  const queue = [...entryModules];
+
+  while (queue.length > 0) {
+    const mod = queue.pop()!;
+    if (collected.has(mod)) continue;
+
+    const modDir = path.join(rootNodeModules, mod);
+    if (!fs.existsSync(modDir)) continue;
+
+    collected.add(mod);
+
+    const pkgPath = path.join(modDir, 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+      if (pkg.dependencies) {
+        queue.push(...Object.keys(pkg.dependencies));
+      }
+    }
+
+    // For scoped packages listed as a prefix (e.g. '@serialport'), also
+    // discover all sub-packages under that scope in node_modules.
+    if (mod.startsWith('@') && !mod.includes('/')) {
+      const scopeDir = path.join(rootNodeModules, mod);
+      if (fs.existsSync(scopeDir) && fs.statSync(scopeDir).isDirectory()) {
+        for (const child of fs.readdirSync(scopeDir)) {
+          queue.push(`${mod}/${child}`);
+        }
+      }
+    }
+  }
+
+  return collected;
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: `**/node_modules/{${nativeModules.join(',')}}/**`
+    },
     name: 'Catalyst Stream Controller',
     executableName: 'catalyst-stream-controller',
     icon: path.resolve(__dirname, 'build/icon'),
     extraResource: [
       ...(process.platform === 'linux' ? [path.resolve(__dirname, 'build/linux/scripts/active-window')] : [])
+    ],
+    afterCopy: [
+      (
+        buildPath: string,
+        _electronVersion: string,
+        _platform: string,
+        _arch: string,
+        callback: (err?: Error | null) => void
+      ) => {
+        const rootNodeModules = path.resolve(__dirname, 'node_modules');
+        const targetNodeModules = path.join(buildPath, 'node_modules');
+        fs.mkdirSync(targetNodeModules, { recursive: true });
+
+        const allDeps = collectAllDeps(rootNodeModules, nativeModules);
+        for (const mod of allDeps) {
+          const src = path.join(rootNodeModules, mod);
+          if (fs.existsSync(src)) {
+            const dest = path.join(targetNodeModules, mod);
+            fs.cpSync(src, dest, { recursive: true });
+          }
+        }
+        callback();
+      }
     ]
   },
   rebuildConfig: {},
   makers: [
-    new MakerSquirrel({ setupExe: 'catalyst-stream-controller-windows-setup.exe' }),
+    new MakerSquirrel({}),
     new MakerZIP({}, ['darwin']),
     new MakerDeb({
       options: {
-        name: 'catalyst-stream-controller-linux',
         depends: [
           'libudev1',
           'libusb-1.0-0',

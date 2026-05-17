@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { platform } from 'node:os';
 import type { DeviceInfo, DeviceButtonEvent, DeviceKnobEvent, DeviceSliderEvent } from '../../shared/types';
 import type { DeviceDriver, ManagedDevice } from './types';
 import { LoupedeckDriver } from './drivers/loupedeck/LoupedeckDriver';
@@ -26,6 +27,16 @@ export class DeviceManager extends EventEmitter {
     // Register built-in hardware drivers
     this.drivers.push(new LoupedeckDriver());
     this.drivers.push(new ElgatoDriver());
+
+    // On Linux, log helpful udev rules info if needed
+    if (platform() === 'linux') {
+      console.log(
+        '[DeviceManager] Linux detected. If you have device connection issues, ' +
+          'ensure udev rules are installed:\n' +
+          '  sudo udevadm control --reload-rules && sudo udevadm trigger\n' +
+          'Then unplug and re-plug the device.'
+      );
+    }
   }
 
   /** Add an additional driver (e.g. VirtualDriver) */

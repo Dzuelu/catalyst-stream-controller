@@ -221,12 +221,24 @@ export class HIDTransport extends BaseTransport {
       } catch (writeErr: unknown) {
         clearTimeout(timeout);
         const wmsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+        // Detect permission-related errors: explicit permission errors, write failures, or device busy
+        const isPermissionError = wmsg.toLowerCase().includes('permission') || 
+                                 wmsg.toLowerCase().includes('access') ||
+                                 wmsg.toLowerCase().includes('busy') ||
+                                 wmsg.toLowerCase().includes('cannot write') ||
+                                 wmsg.toLowerCase().includes('eacces');
+        
         reject(
           new Error(
             `Cannot write to HID device at ${this.hidPath} (${wmsg}). ` +
-              'The device may require different report parameters. ' +
-              'Please file a bug with the output of: ' +
-              'node -e "require(\'node-hid\').devices().forEach(d=>console.log(JSON.stringify(d)))"'
+            (isPermissionError 
+              ? 'This is usually a permission issue. On Linux, ensure udev rules are installed and reloaded:\n' +
+                '  sudo udevadm control --reload-rules && sudo udevadm trigger\n' +
+                'Then unplug and re-plug the device, or reboot.'
+              : 'The device may require different report parameters. ' +
+                'Please file a bug with the output of: ' +
+                'node -e "require(\'node-hid\').devices().forEach(d=>console.log(JSON.stringify(d)))"'
+            )
           )
         );
       }

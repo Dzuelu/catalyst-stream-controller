@@ -40,4 +40,10 @@ if command -v udevadm >/dev/null 2>&1; then
   udevadm trigger
 fi
 
+# Add the user to the dialout group for HID device access (fallback for systems without systemd-logind)
+if [ -n "$SUDO_USER" ]; then
+  usermod -a -G dialout "$SUDO_USER" 2>/dev/null || true
+  echo "Added $SUDO_USER to dialout group. Please log out and back in for the changes to take effect."
+fi
+
 exit 0
